@@ -126,6 +126,14 @@ io.on('connection', (socket) => {
     socket.emit('active_riders_update', Object.values(activeRiders));
   });
 
+  // --- NOTIFIKASI: join room pribadi (user_{userId}) ---
+  socket.on('join_user_room', (userId) => {
+    if (userId) {
+      socket.join(`user_${userId}`);
+      console.log(`🔔 Socket ${socket.id} joined notification room: user_${userId}`);
+    }
+  });
+
   // --- CHAT: join room agar pesan hanya ke peserta room ---
   socket.on('join_chat_room', (chatId) => {
     if (chatId) {
@@ -173,8 +181,52 @@ io.on('connection', (socket) => {
       } else {
         io.emit('receive_message', data);
       }
+
+      // Kirim notifikasi ke room pribadi penerima
+      if (data.message?.sender === 'customer' && data.riderId) {
+        // Customer kirim ke Rider → notifikasi ke room rider
+        io.to(`user_${data.riderId}`).emit('new_notification', {
+          chatId: data.chatId,
+          from: data.customer?.name || 'Pelanggan',
+          preview: data.message?.text || ''
+        });
+      } else if (data.message?.sender === 'rider' && data.customer?.id) {
+        // Rider kirim ke Customer → notifikasi ke room customer
+        io.to(`user_${data.customer.id}`).emit('new_notification', {
+          chatId: data.chatId,
+          from: data.riderData?.riderName || 'Rider',
+          preview: data.message?.text || ''
+        });
+      }
     } catch (e) {
       console.log('❌ send_message exception:', e.message);
+    }
+  });
+
+  // --- PROFILE: broadcast perubahan profil ke semua client ---
+  socket.on('profile_updated', (data) => {
+    // Relay ke semua client lain agar chat dan map langsung update
+    socket.broadcast.emit('profile_updated', data);
+    console.log(`📸 Profile updated broadcast: ${data.name} (userId: ${data.userId})`);
+
+    // Force-update ke tabel profiles DB lewat backend (bypass RLS)
+    if (data.userId) {
+      supabase
+        .from('profiles')
+        .update({ name: data.name, brand: data.brand || null, logo: data.logo || null })
+        .eq('id', data.userId)
+        .then(({ error }) => {
+          if (error) console.log('❌ DB profile force-update error:', error.message);
+          else console.log(`✅ DB profile force-updated for ${data.userId}`);
+        });
+    }
+
+    // Update activeRiders in-memory agar data tidak tertimpa saat location update berikutnya
+    if (data.role === 'rider' && data.userId && activeRiders[data.userId]) {
+      activeRiders[data.userId].name = data.name;
+      if (data.brand) activeRiders[data.userId].brand = data.brand;
+      if (data.logo) activeRiders[data.userId].logo = data.logo;
+      broadcastRiders(); // langsung broadcast active_riders terbaru
     }
   });
 
