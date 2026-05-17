@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd temu-kopling && npm install && npm run build",
+  "outputDirectory": "temu-kopling/.next",
+  "installCommand": "cd temu-kopling && npm install",
+  "framework": "nextjs",
+  "rootDirectory": "temu-kopling"
+}
