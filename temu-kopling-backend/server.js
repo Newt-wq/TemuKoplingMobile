@@ -301,62 +301,9 @@ io.on('connection', (socket) => {
   });
 });
 
-// =======================================================
-// REST API ENDPOINTS
-// =======================================================
-
-// --- MENUS API ---
-app.get('/api/menus/:riderId', async (req, res) => {
-  const { riderId } = req.params;
-  const { data, error } = await supabase
-    .from('menus')
-    .select('*')
-    .eq('rider_id', riderId)
-    .order('name');
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
-});
-
-app.post('/api/menus', async (req, res) => {
-  const { error, data } = await supabase.from('menus').insert([req.body]).select().single();
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
-});
-
-app.put('/api/menus/:id', async (req, res) => {
-  const { id } = req.params;
-  const { error, data } = await supabase.from('menus').update(req.body).eq('id', id).select().single();
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
-});
-
-app.delete('/api/menus/:id', async (req, res) => {
-  const { id } = req.params;
-  const { error } = await supabase.from('menus').delete().eq('id', id);
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ success: true });
-});
-
-// --- ACTIVE RIDERS API ---
-app.get('/api/active-riders', async (req, res) => {
-  const { data, error } = await supabase
-    .from('active_riders')
-    .select('*')
-    .eq('status', 'online');
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
-});
-
-app.get('/api/active-riders/:id', async (req, res) => {
-  const { id } = req.params;
-  const { data, error } = await supabase
-    .from('active_riders')
-    .select('*')
-    .eq('rider_id', id)
-    .single();
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
-});
+// Backend ini sekarang murni difokuskan untuk menangani WebSocket (Realtime Chat & Tracking)
+// Semua operasi CRUD (seperti Manajemen Menu) langsung ditangani oleh aplikasi Next.js
+// melalui koneksi Supabase Client.
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
