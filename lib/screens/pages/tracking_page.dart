@@ -4,7 +4,8 @@ import 'package:latlong2/latlong.dart';
 import 'dart:async';
 
 class TrackingPage extends StatefulWidget {
-  const TrackingPage({super.key});
+  final void Function(Map<String, dynamic> riderInfo)? onNavigateToChat;
+  const TrackingPage({super.key, this.onNavigateToChat});
 
   @override
   State<TrackingPage> createState() => _TrackingPageState();
@@ -98,7 +99,14 @@ class _TrackingPageState extends State<TrackingPage> {
 
   void _onChat(Map<String, dynamic>? rider) {
     if (rider == null) return;
-    // TODO: aksi buka chat
+    // Kirim data rider lengkap ke MainScreen → ChatPage akan buat sesi baru
+    widget.onNavigateToChat?.call({
+      'rider_id': rider['rider_id']?.toString() ?? '',
+      'name': rider['name'] ?? 'Kurir',
+      'brand': rider['brand'] ?? 'Brand Kopi',
+      'logo': rider['logo'] ?? '',
+      'status': 'Mengantar',
+    });
   }
 
   void _onLihatMenu(Map<String, dynamic>? rider) {
@@ -137,7 +145,7 @@ class _TrackingPageState extends State<TrackingPage> {
           Positioned.fill(
             child: FlutterMap(
               options: MapOptions(
-                initialCenter: LatLng(-7.2575, 112.7521), // Surabaya Center
+                initialCenter: LatLng(-7.2575, 112.7521),
                 initialZoom: 14.0,
                 onTap: (_, __) => _closePanel(),
               ),
@@ -228,7 +236,7 @@ class _TrackingPageState extends State<TrackingPage> {
               ),
             ),
 
-          // 3. BOTTOM SHEET PANEL — nempel di tepi layar, slide dari bawah
+          // 3. BOTTOM SHEET PANEL
           Positioned(
             left: 0,
             right: 0,
@@ -264,7 +272,7 @@ class _TrackingPageState extends State<TrackingPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Handle bar kecil di atas, ciri khas bottom sheet
+                      // Handle bar
                       Container(
                         width: 40,
                         height: 4,
@@ -308,7 +316,7 @@ class _TrackingPageState extends State<TrackingPage> {
                       ),
                       const Divider(height: 24, thickness: 1),
 
-                      // Informasi Kurir (foto, nama, brand)
+                      // Informasi Kurir
                       Row(
                         children: [
                           CircleAvatar(
@@ -343,7 +351,7 @@ class _TrackingPageState extends State<TrackingPage> {
 
                       const SizedBox(height: 14),
 
-                      // Tombol utama: Lihat Rute
+                      // Tombol Lihat Rute
                       SizedBox(
                         width: double.infinity,
                         height: 44,
@@ -367,7 +375,7 @@ class _TrackingPageState extends State<TrackingPage> {
 
                       const SizedBox(height: 10),
 
-                      // Tombol kedua: Chat & Lihat Menu berdampingan
+                      // Tombol Chat & Lihat Menu
                       Row(
                         children: [
                           Expanded(

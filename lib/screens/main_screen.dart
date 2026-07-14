@@ -14,6 +14,8 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
+  /// Data rider dari TrackingPage yang akan dibuatkan chatroom baru
+  Map<String, dynamic>? _chatNewRiderInfo;
 
   // Daftar halaman riil yang akan dipanggil saat tab diklik
   late final List<Widget> _pages;
@@ -30,7 +32,9 @@ class _MainScreenState extends State<MainScreen> {
         },
       ),
       const ChatPage(),
-      const TrackingPage(), // Isinya masih kosong (placeholder) sesuai request
+      TrackingPage(
+        onNavigateToChat: _navigateToChat,
+      ),
       LikePage(
         onExplore: () {
           setState(() {
@@ -42,16 +46,34 @@ class _MainScreenState extends State<MainScreen> {
     ];
   }
 
+  /// Dipanggil dari TrackingPage saat tombol Chat ditekan.
+  /// Menerima data rider lengkap dan langsung buka chatroom baru.
+  void _navigateToChat(Map<String, dynamic> riderInfo) {
+    setState(() {
+      _chatNewRiderInfo = riderInfo;
+      _selectedIndex = 1; // Pindah ke tab Chat
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       
       // ===== ISI HALAMAN TENGAH =====
-      // Menggunakan IndexedStack agar saat pindah tab, halamannya tidak ke-reload dari awal
+      // ChatPage dirender ulang dengan data rider baru saat navigasi dari Tracking
       body: IndexedStack(
         index: _selectedIndex,
-        children: _pages,
+        children: [
+          _pages[0], // Home
+          ChatPage(
+            key: ValueKey(_chatNewRiderInfo?['rider_id']),
+            newRiderInfo: _chatNewRiderInfo,
+          ), // Chat
+          _pages[2], // Tracking
+          _pages[3], // Favorite
+          _pages[4], // Profile
+        ],
       ),
 
       // ===== 1. TOMBOL FLOATING DI TENGAH (TRACKING) =====
