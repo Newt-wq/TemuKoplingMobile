@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
+import '../../services/profile_manager.dart';
 
 // ==========================================
 // DATA MODEL MENU & BRAND
@@ -125,6 +126,25 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   String _selectedBrand = 'Terlaris';
+  late final ProfileManager _profileManager = ProfileManager();
+
+  @override
+  void initState() {
+    super.initState();
+    _profileManager.addListener(_onProfileChanged);
+  }
+
+  @override
+  void dispose() {
+    _profileManager.removeListener(_onProfileChanged);
+    super.dispose();
+  }
+
+  void _onProfileChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   List<MenuModel> get _filteredMenus {
     if (_selectedBrand == 'Terlaris') return recommendedMenus; // Tampilkan rekomendasi saja
@@ -168,10 +188,13 @@ class _HomePageState extends State<HomePage> {
                     // 1. HEADER PROFIL
                     Row(
                       children: [
-                        const CircleAvatar(
+                        CircleAvatar(
                           radius: 22,
                           backgroundColor: lightTan,
-                          child: Icon(Icons.person, color: darkBrown),
+                          backgroundImage: ProfileManager.getProfileImage(_profileManager.profileImage),
+                          child: ProfileManager.getProfileImage(_profileManager.profileImage) == null
+                              ? const Icon(Icons.person, color: darkBrown)
+                              : null,
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -182,9 +205,9 @@ class _HomePageState extends State<HomePage> {
                                 _getGreeting(),
                                 style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w500),
                               ),
-                              const Text(
-                                'Budi Sudarsono',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: darkBrown),
+                              Text(
+                                _profileManager.name,
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: darkBrown),
                               ),
                             ],
                           ),

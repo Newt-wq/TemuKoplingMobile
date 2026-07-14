@@ -1,4 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../services/profile_manager.dart';
+import 'order_history_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -23,9 +27,8 @@ class _ProfilePageState extends State<ProfilePage>
   static const Color textSecondary = Color(0xFF8D6E63);
 
   // ===== STATE DATA AKUN & PREFERENSI =====
-  String _name = 'Pengguna Temu Kopling';
-  String _email = 'pengguna@email.com';
-  String _phone = '+62 812-3456-7890';
+  late final ProfileManager _profileManager = ProfileManager();
+
   String _language = 'Indonesia';
   bool _notificationsEnabled = true;
   bool _darkModeEnabled = false;
@@ -38,6 +41,7 @@ class _ProfilePageState extends State<ProfilePage>
   @override
   void initState() {
     super.initState();
+    _profileManager.addListener(_onProfileChanged);
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -52,8 +56,15 @@ class _ProfilePageState extends State<ProfilePage>
 
   @override
   void dispose() {
+    _profileManager.removeListener(_onProfileChanged);
     _animController.dispose();
     super.dispose();
+  }
+
+  void _onProfileChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -200,17 +211,20 @@ class _ProfilePageState extends State<ProfilePage>
                   child: CircleAvatar(
                     radius: 48,
                     backgroundColor: lightBrown,
-                    child: const Icon(
-                      Icons.person_rounded,
-                      size: 54,
-                      color: Colors.white,
-                    ),
+                    backgroundImage: ProfileManager.getProfileImage(_profileManager.profileImage),
+                    child: ProfileManager.getProfileImage(_profileManager.profileImage) == null
+                        ? const Icon(
+                            Icons.person_rounded,
+                            size: 54,
+                            color: Colors.white,
+                          )
+                        : null,
                   ),
                 ),
                 const SizedBox(height: 14),
                 // Nama pengguna
                 Text(
-                  _name,
+                  _profileManager.name,
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -221,7 +235,7 @@ class _ProfilePageState extends State<ProfilePage>
                 const SizedBox(height: 6),
                 // Email
                 Text(
-                  _email,
+                  _profileManager.email,
                   style: TextStyle(
                     fontSize: 13,
                     color: _darkModeEnabled ? Colors.white70 : textSecondary,
@@ -323,11 +337,22 @@ class _ProfilePageState extends State<ProfilePage>
         child: IntrinsicHeight(
           child: Row(
             children: [
-              Expanded(child: _buildStatItem('24', 'Pesanan', Icons.receipt_long_rounded)),
+              Expanded(child: _buildStatItem('5', 'Kupon Saya', Icons.confirmation_number_outlined)),
               _buildStatDivider(),
-              Expanded(child: _buildStatItem('1.250', 'Poin', Icons.stars_rounded)),
+              Expanded(child: _buildStatItem('12', 'Menu Favorit', Icons.favorite_border_rounded)),
               _buildStatDivider(),
-              Expanded(child: _buildStatItem('8', 'Ulasan', Icons.rate_review_rounded)),
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const OrderHistoryPage()),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(20),
+                  child: _buildStatItem('4', 'History Pemesanan', Icons.history_rounded),
+                ),
+              ),
             ],
           ),
         ),
@@ -407,15 +432,6 @@ class _ProfilePageState extends State<ProfilePage>
         title: 'Alamat Saya',
         subtitle: 'Kelola alamat pengiriman',
         onTap: () => _showAddressesSheet(),
-      ),
-      _buildMenuDivider(),
-      _buildMenuItem(
-        icon: Icons.history_rounded,
-        iconBg: const Color(0xFFFFF3E0),
-        iconColor: const Color(0xFFEF6C00),
-        title: 'Riwayat Pesanan',
-        subtitle: 'Lihat semua pesanan kamu',
-        onTap: () => _showOrderHistorySheet(),
       ),
     ]);
   }
@@ -716,18 +732,20 @@ class _ProfilePageState extends State<ProfilePage>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => _EditProfileSheet(
-        initialName: _name,
-        initialEmail: _email,
-        initialPhone: _phone,
+        initialName: _profileManager.name,
+        initialEmail: _profileManager.email,
+        initialPhone: _profileManager.phone,
+        initialImage: _profileManager.profileImage,
       ),
     );
 
     if (result != null && mounted) {
-      setState(() {
-        _name = result['name'] ?? _name;
-        _email = result['email'] ?? _email;
-        _phone = result['phone'] ?? _phone;
-      });
+      _profileManager.updateProfile(
+        name: result['name'] ?? _profileManager.name,
+        email: result['email'] ?? _profileManager.email,
+        phone: result['phone'] ?? _profileManager.phone,
+        profileImage: result['image'],
+      );
     }
   }
 
@@ -960,31 +978,35 @@ class _ProfilePageState extends State<ProfilePage>
   // =============================================
   // SHEET: Riwayat Pesanan
   // =============================================
-  void _showOrderHistorySheet() {
-    final List<Map<String, String>> dummyOrders = [
+  void _showPaymentMethodsSheet() {
+    final List<Map<String, dynamic>> paymentMethods = [
       {
-        'id': 'ORD-893048',
-        'brand': 'Kopi Jago',
-        'item': 'Es Kopi Susu Jago x2',
-        'price': 'Rp 24.000',
-        'status': 'Selesai',
-        'date': 'Hari ini, 14:32'
+        'name': 'GoPay',
+        'icon': Icons.account_balance_wallet_rounded,
+        'color': Colors.blue,
+        'subtitle': 'Utama • Terhubung',
+        'isLinked': true,
       },
       {
-        'id': 'ORD-891902',
-        'brand': 'Calf Coffee',
-        'item': 'Caramel Macchiato x1',
-        'price': 'Rp 28.000',
-        'status': 'Selesai',
-        'date': 'Kemarin, 10:15'
+        'name': 'OVO',
+        'icon': Icons.account_balance_wallet_rounded,
+        'color': Colors.deepPurple,
+        'subtitle': 'Terhubung',
+        'isLinked': true,
       },
       {
-        'id': 'ORD-881903',
-        'brand': 'Sejuta Jiwa',
-        'item': 'Es Americano x1',
-        'price': 'Rp 18.000',
-        'status': 'Selesai',
-        'date': '10 Jul 2026'
+        'name': 'ShopeePay',
+        'icon': Icons.account_balance_wallet_rounded,
+        'color': Colors.orange,
+        'subtitle': 'Belum terhubung',
+        'isLinked': false,
+      },
+      {
+        'name': 'Kartu Debit/Kredit',
+        'icon': Icons.credit_card_rounded,
+        'color': Colors.green,
+        'subtitle': 'Atur kartu debit/kredit',
+        'isLinked': false,
       },
     ];
 
@@ -994,9 +1016,6 @@ class _ProfilePageState extends State<ProfilePage>
       isScrollControlled: true,
       builder: (context) {
         return Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.7,
-          ),
           decoration: BoxDecoration(
             color: _darkModeEnabled ? const Color(0xFF1E1410) : bgCream,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -1022,109 +1041,79 @@ class _ProfilePageState extends State<ProfilePage>
                   ),
                 ),
               ),
-              Text(
-                'Riwayat Pesanan',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: _darkModeEnabled ? Colors.white : textPrimary,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Metode Pembayaran',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: _darkModeEnabled ? Colors.white : textPrimary,
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () {},
+                    icon: const Icon(Icons.add, size: 16, color: primaryBrown),
+                    label: const Text('Tambah', style: TextStyle(color: primaryBrown, fontSize: 13, fontWeight: FontWeight.bold)),
+                  ),
+                ],
               ),
               const Divider(),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: dummyOrders.length,
-                  itemBuilder: (context, index) {
-                    final order = dummyOrders[index];
-                    return Card(
-                      color: _darkModeEnabled ? const Color(0xFF2C1E18) : Colors.white,
-                      elevation: 0,
-                      margin: const EdgeInsets.only(bottom: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: BorderSide(
-                          color: _darkModeEnabled ? const Color(0xFF422F26) : const Color(0xFFEEE0D8),
+              const SizedBox(height: 8),
+              Column(
+                children: paymentMethods.map((method) {
+                  return Card(
+                    color: _darkModeEnabled ? const Color(0xFF2C1E18) : Colors.white,
+                    elevation: 0,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(
+                        color: _darkModeEnabled ? const Color(0xFF422F26) : const Color(0xFFEEE0D8),
+                      ),
+                    ),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: method['color'].withOpacity(0.1),
+                        child: Icon(method['icon'], color: method['color']),
+                      ),
+                      title: Text(
+                        method['name'],
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: _darkModeEnabled ? Colors.white : textPrimary,
+                          fontSize: 14,
                         ),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  order['id']!,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    color: _darkModeEnabled ? Colors.white70 : textSecondary,
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFE8F5E9),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Text(
-                                    order['status']!,
-                                    style: const TextStyle(
-                                      color: Color(0xFF2E7D32),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const Divider(height: 16),
-                            Text(
-                              order['brand']!,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: _darkModeEnabled ? Colors.white : textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              order['item']!,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: _darkModeEnabled ? Colors.white70 : textSecondary,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  order['price']!,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    color: primaryBrown,
-                                  ),
-                                ),
-                                Text(
-                                  order['date']!,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: _darkModeEnabled ? Colors.white70 : textSecondary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                      subtitle: Text(
+                        method['subtitle'],
+                        style: const TextStyle(fontSize: 11, color: textSecondary),
                       ),
-                    );
-                  },
-                ),
+                      trailing: method['isLinked']
+                          ? const Text(
+                              'Aktif',
+                              style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
+                            )
+                          : Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 14,
+                              color: Colors.grey[400],
+                            ),
+                      onTap: () {
+                        if (!method['isLinked']) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Menghubungkan ke ${method['name']}...'),
+                              backgroundColor: primaryBrown,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  );
+                }).toList(),
               ),
             ],
           ),
@@ -1689,11 +1678,13 @@ class _EditProfileSheet extends StatefulWidget {
   final String initialName;
   final String initialEmail;
   final String initialPhone;
+  final String? initialImage;
 
   const _EditProfileSheet({
     required this.initialName,
     required this.initialEmail,
     required this.initialPhone,
+    this.initialImage,
   });
 
   @override
@@ -1704,6 +1695,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _phoneController;
+  String? _selectedImageBase64;
 
   @override
   void initState() {
@@ -1711,6 +1703,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     _nameController = TextEditingController(text: widget.initialName);
     _emailController = TextEditingController(text: widget.initialEmail);
     _phoneController = TextEditingController(text: widget.initialPhone);
+    _selectedImageBase64 = widget.initialImage;
   }
 
   @override
@@ -1719,6 +1712,31 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     _emailController.dispose();
     _phoneController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 500,
+        maxHeight: 500,
+        imageQuality: 80,
+      );
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        setState(() {
+          _selectedImageBase64 = base64Encode(bytes);
+        });
+      }
+    } catch (e) {
+      debugPrint("Error picking image: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Gagal mengambil gambar: $e")),
+        );
+      }
+    }
   }
 
   @override
@@ -1774,28 +1792,34 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 children: [
                   // Avatar edit
                   Center(
-                    child: Stack(
-                      children: [
-                        const CircleAvatar(
-                          radius: 50,
-                          backgroundColor: Color(0xFFD4A27A),
-                          child: Icon(Icons.person_rounded,
-                              size: 58, color: Colors.white),
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF4A3324),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.camera_alt_rounded,
-                                color: Colors.white, size: 16),
+                    child: GestureDetector(
+                      onTap: _pickImage,
+                      child: Stack(
+                        children: [
+                          CircleAvatar(
+                            radius: 50,
+                            backgroundColor: const Color(0xFFD4A27A),
+                            backgroundImage: ProfileManager.getProfileImage(_selectedImageBase64),
+                            child: ProfileManager.getProfileImage(_selectedImageBase64) == null
+                                ? const Icon(Icons.person_rounded,
+                                    size: 58, color: Colors.white)
+                                : null,
                           ),
-                        ),
-                      ],
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF4A3324),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.camera_alt_rounded,
+                                  color: Colors.white, size: 16),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 28),
@@ -1815,6 +1839,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                           'name': _nameController.text,
                           'email': _emailController.text,
                           'phone': _phoneController.text,
+                          'image': _selectedImageBase64 ?? '',
                         });
                       },
                       style: ElevatedButton.styleFrom(
