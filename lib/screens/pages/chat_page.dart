@@ -546,25 +546,6 @@ class _ChatPageState extends State<ChatPage> {
   Widget _buildChatItemCard(ChatSession session) {
     final lastMsg = session.messages.isNotEmpty ? session.messages.last.text : '';
     final hasUnread = session.unreadCount > 0;
-    
-    // Status Badge Styling
-    Color statusBg = Colors.grey[100]!;
-    Color statusText = Colors.grey[700]!;
-    String statusLabel = session.status;
-
-    if (session.status == 'Mengantar') {
-      statusBg = const Color(0xFFE8F5E9);
-      statusText = const Color(0xFF2E7D32);
-      statusLabel = '🛵 Mengantar';
-    } else if (session.status == 'Diseduh') {
-      statusBg = const Color(0xFFFFF3E0);
-      statusText = const Color(0xFFE65100);
-      statusLabel = '☕ Diseduh';
-    } else {
-      statusBg = Colors.grey[200]!;
-      statusText = Colors.grey[600]!;
-      statusLabel = 'Selesai';
-    }
 
     return Card(
       color: Colors.white,
@@ -658,24 +639,6 @@ class _ChatPageState extends State<ChatPage> {
                               fontSize: 12.5,
                               color: hasUnread ? Colors.black87 : Colors.black45,
                               fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        
-                        // Status Badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: statusBg,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            statusLabel,
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              color: statusText,
-                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),

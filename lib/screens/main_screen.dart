@@ -42,7 +42,13 @@ class _MainScreenState extends State<MainScreen> {
           });
         },
       ),
-      const ProfilePage(),
+      ProfilePage(
+        onNavigateToFavorite: () {
+          setState(() {
+            _selectedIndex = 3; // Pindah ke tab Favorite
+          });
+        },
+      ),
     ];
   }
 

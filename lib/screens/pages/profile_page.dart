@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/profile_manager.dart';
-import 'order_history_page.dart';
+import 'home_page.dart'; // untuk FavoritesManager
 
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key});
+  final VoidCallback? onNavigateToFavorite;
+  const ProfilePage({super.key, this.onNavigateToFavorite});
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -42,6 +43,7 @@ class _ProfilePageState extends State<ProfilePage>
   void initState() {
     super.initState();
     _profileManager.addListener(_onProfileChanged);
+    FavoritesManager.addListener(_onFavoritesChanged);
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -57,14 +59,17 @@ class _ProfilePageState extends State<ProfilePage>
   @override
   void dispose() {
     _profileManager.removeListener(_onProfileChanged);
+    FavoritesManager.removeListener(_onFavoritesChanged);
     _animController.dispose();
     super.dispose();
   }
 
   void _onProfileChanged() {
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
+  }
+
+  void _onFavoritesChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -337,20 +342,17 @@ class _ProfilePageState extends State<ProfilePage>
         child: IntrinsicHeight(
           child: Row(
             children: [
-              Expanded(child: _buildStatItem('5', 'Kupon Saya', Icons.confirmation_number_outlined)),
-              _buildStatDivider(),
-              Expanded(child: _buildStatItem('12', 'Menu Favorit', Icons.favorite_border_rounded)),
+              Expanded(child: _buildStatItem('0', 'Kupon Saya', Icons.confirmation_number_outlined)),
               _buildStatDivider(),
               Expanded(
                 child: InkWell(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const OrderHistoryPage()),
-                    );
-                  },
+                  onTap: () => widget.onNavigateToFavorite?.call(),
                   borderRadius: BorderRadius.circular(20),
-                  child: _buildStatItem('4', 'History Pemesanan', Icons.history_rounded),
+                  child: _buildStatItem(
+                    FavoritesManager.favoriteItems.length.toString(),
+                    'Menu Favorit',
+                    Icons.favorite_border_rounded,
+                  ),
                 ),
               ),
             ],
@@ -423,15 +425,6 @@ class _ProfilePageState extends State<ProfilePage>
         title: 'Informasi Pribadi',
         subtitle: 'Nama, email, nomor telepon',
         onTap: () => _showEditProfileDialog(),
-      ),
-      _buildMenuDivider(),
-      _buildMenuItem(
-        icon: Icons.location_on_outlined,
-        iconBg: const Color(0xFFE8F5E9),
-        iconColor: const Color(0xFF43A047),
-        title: 'Alamat Saya',
-        subtitle: 'Kelola alamat pengiriman',
-        onTap: () => _showAddressesSheet(),
       ),
     ]);
   }
