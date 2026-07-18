@@ -467,9 +467,11 @@ class _TrackingPageState extends State<TrackingPage> with SingleTickerProviderSt
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/512/{z}/{x}/{y}?access_token=pk.eyJ1IjoicmxkeW5uIiwiYSI6ImNtajZvZTQ2djI1bXozZHNmeDBiNDZkcWYifQ.1UbeRwESrkwBdo5Jsg7gfA',
                       userAgentPackageName: 'com.example.temu_kopling',
                       maxZoom: 19,
+                      tileSize: 512,
+                      zoomOffset: -1,
                     ),
                     // Titik biru lokasi user (seperti GeolocateControl di web) - Digambar di belakang marker
                     if (_userLocation != null)
