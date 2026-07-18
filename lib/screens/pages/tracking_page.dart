@@ -306,13 +306,23 @@ class _TrackingPageState extends State<TrackingPage> with SingleTickerProviderSt
     if (rider == null) return;
     final lat = double.tryParse(rider['lat'].toString()) ?? -7.2575;
     final lng = double.tryParse(rider['lng'].toString()) ?? 112.7521;
-    final url = 'https://www.google.com/maps?daddr=$lat,$lng';
-    final uri = Uri.parse(url);
+    
+    // Gunakan skema geo: untuk Android, fallback ke google maps web
+    final String googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+    final String geoUrl = 'geo:$lat,$lng?q=$lat,$lng';
+
     try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      // Coba buka skema geo terlebih dahulu (membuka Google Maps app langsung)
+      final Uri geoUri = Uri.parse(geoUrl);
+      final Uri webUri = Uri.parse(googleMapsUrl);
+      
+      if (await canLaunchUrl(geoUri)) {
+        await launchUrl(geoUri);
+      } else if (await canLaunchUrl(webUri)) {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
       } else {
-        debugPrint("Could not launch $url");
+        // Fallback langsung panggil tanpa canLaunchUrl jika canLaunchUrl mengembalikan false karena policy Android
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
       }
     } catch (e) {
       debugPrint("Error launching maps: $e");
@@ -462,16 +472,20 @@ class _TrackingPageState extends State<TrackingPage> with SingleTickerProviderSt
                     initialCenter: LatLng(-7.2575, 112.7521),
                     initialZoom: 14.0,
                     minZoom: 3.0,
-                    maxZoom: 18.0,
+                    maxZoom: 21.0,
                     onTap: (_, __) => _closePanel(),
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/512/{z}/{x}/{y}?access_token=pk.eyJ1IjoicmxkeW5uIiwiYSI6ImNtajZvZTQ2djI1bXozZHNmeDBiNDZkcWYifQ.1UbeRwESrkwBdo5Jsg7gfA',
-                      userAgentPackageName: 'com.example.temu_kopling',
-                      maxZoom: 19,
+                      urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/512/{z}/{x}/{y}?access_token=pk.eyJ1IjoicmxkeW5uIiwiYSI6ImNtcnFkbHQ3eTNxamwyeHNlbHlid3lvdXEifQ.RWhbqX2IppS-TtBpeZvt6g',
+                      userAgentPackageName: 'com.example.temu_kopling_mobile',
+                      maxZoom: 21,
                       tileSize: 512,
                       zoomOffset: -1,
+                      // Error handling untuk tiles yang gagal load
+                      errorTileCallback: (tile, error, stackTrace) {
+                        debugPrint('❌ Tile load error: $error');
+                      },
                     ),
                     // Titik biru lokasi user (seperti GeolocateControl di web) - Digambar di belakang marker
                     if (_userLocation != null)
@@ -502,8 +516,8 @@ class _TrackingPageState extends State<TrackingPage> with SingleTickerProviderSt
                     return Marker(
                       point: LatLng(lat, lng),
                       width: 90,
-                      height: 90,
-                      alignment: Alignment.center,
+                      height: 80,
+                      alignment: Alignment.bottomCenter, // Pin berdiri: ujung segitiga di koordinat
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
@@ -515,42 +529,69 @@ class _TrackingPageState extends State<TrackingPage> with SingleTickerProviderSt
                         child: AnimatedBuilder(
                           animation: _pulseAnim,
                           builder: (context, child) {
-                            return Column(
-                              mainAxisSize: MainAxisSize.min,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Container(
-                                  width: 56,
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: isSelected ? accentBrown : primaryBrown,
-                                      width: 3,
+                            final double pulseSize = 16.0 * _pulseAnim.value;
+                            final double pulseOpacity = 0.5 * (1.0 - _pulseAnim.value);
+                            return SizedBox(
+                              width: 90,
+                              height: 80,
+                              child: Stack(
+                                alignment: Alignment.topCenter,
+                                children: [
+                                  // Pulse ring (breathing effect)
+                                  Positioned(
+                                    top: (64 - (64 + pulseSize)) / 2,
+                                    left: (90 - (64 + pulseSize)) / 2,
+                                    child: Container(
+                                      width: 64 + pulseSize,
+                                      height: 64 + pulseSize,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: (isSelected ? accentBrown : primaryBrown)
+                                              .withValues(alpha: pulseOpacity),
+                                          width: 2.0,
+                                        ),
+                                      ),
                                     ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: (isSelected ? accentBrown : primaryBrown)
-                                            .withValues(alpha: 0.4 * (1.0 - _pulseAnim.value)),
-                                        spreadRadius: 15.0 * _pulseAnim.value,
-                                        blurRadius: 15.0 * _pulseAnim.value,
+                                  ),
+                                  // Main pin: circle + triangle
+                                  Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 60,
+                                        height: 60,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: isSelected ? accentBrown : primaryBrown,
+                                            width: 3.0,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(alpha: 0.15),
+                                              blurRadius: 6,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(30),
+                                          child: _buildLogo(rider['logo'] ?? ''),
+                                        ),
+                                      ),
+                                      // Segitiga lancip (pin pointer)
+                                      CustomPaint(
+                                        size: const Size(16, 12),
+                                        painter: TrianglePainter(
+                                          color: isSelected ? accentBrown : primaryBrown,
+                                        ),
                                       ),
                                     ],
                                   ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(28),
-                                    child: _buildLogo(rider['logo'] ?? ''),
-                                  ),
-                                ),
-                                // Segitiga lancip map pin (tri) mengarah ke bawah, persis seperti web
-                                CustomPaint(
-                                  size: const Size(16, 12),
-                                  painter: TrianglePainter(
-                                    color: isSelected ? accentBrown : primaryBrown,
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             );
                           },
                         ),

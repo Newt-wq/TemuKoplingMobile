@@ -735,12 +735,50 @@ class _ProfilePageState extends State<ProfilePage>
     );
 
     if (result != null && mounted) {
+      final newName = result['name'] ?? _profileManager.name;
+      final newEmail = result['email'] ?? _profileManager.email;
+      final newPhone = result['phone'] ?? _profileManager.phone;
+      final newImage = result['image'];
+
+      // Update lokal
       _profileManager.updateProfile(
-        name: result['name'] ?? _profileManager.name,
-        email: result['email'] ?? _profileManager.email,
-        phone: result['phone'] ?? _profileManager.phone,
-        profileImage: result['image'],
+        name: newName,
+        email: newEmail,
+        phone: newPhone,
+        profileImage: newImage,
       );
+
+      // Sync ke Supabase
+      try {
+        final userId = Supabase.instance.client.auth.currentUser?.id;
+        if (userId != null) {
+          await Supabase.instance.client.from('profiles').upsert({
+            'id': userId,
+            'name': newName,
+            'email': newEmail,
+            'phone': newPhone,
+            if (newImage != null && newImage.isNotEmpty) 'logo': newImage,
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Profil berhasil diperbarui'),
+                backgroundColor: Color(0xFF4A3324),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint("Error syncing profile to Supabase: $e");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Gagal menyimpan ke server: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
     }
   }
 

@@ -252,7 +252,10 @@ class _HomePageState extends State<HomePage> {
                                     children: [
                                       TileLayer(
                                         urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                        userAgentPackageName: 'com.example.temu_kopling',
+                                        userAgentPackageName: 'com.example.temu_kopling_mobile',
+                                        errorTileCallback: (tile, error, stackTrace) {
+                                          debugPrint('❌ Home tile error: $error');
+                                        },
                                       ),
                                     ],
                                   ),

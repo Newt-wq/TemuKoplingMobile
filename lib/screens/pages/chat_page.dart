@@ -1,5 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import '../../services/profile_manager.dart';
 
 // ==========================================
 // MODELS FOR CHAT
@@ -20,13 +26,14 @@ class MessageModel {
 
 class ChatSession {
   final String id;
-  final String riderName;
-  final String brandName;
-  final String avatarPath;
-  final String status; // 'Mengantar', 'Diseduh', 'Selesai'
-  final String lastMessageTime;
+  String riderName;
+  String brandName;
+  String avatarPath;
+  String status; // 'Mengantar', 'Diseduh', 'Selesai'
+  String lastMessageTime;
   final List<MessageModel> messages;
   int unreadCount;
+  final String riderId;
 
   ChatSession({
     required this.id,
@@ -37,6 +44,7 @@ class ChatSession {
     required this.lastMessageTime,
     required this.messages,
     this.unreadCount = 0,
+    required this.riderId,
   });
 }
 
@@ -67,61 +75,334 @@ class _ChatPageState extends State<ChatPage> {
   static const Color lightTan = Color(0xFFF5E6D3);
   static const Color bgCream = Color(0xFFFCFAF8);
 
-  // List of initial mock chats (Made static to persist history when widget is recreated)
-  static final List<ChatSession> _globalSessions = [];
-  late List<ChatSession> _sessions;
+  String? _customerId;
+  String? _customerName;
+  String? _customerLogo;
+
+  // List of active chats
+  final List<ChatSession> _sessions = [];
+  
+  // Supabase Realtime channel & Backup Polling
+  RealtimeChannel? _messagesChannel;
+  Timer? _backupPollingTimer;
+  bool _isFetchingBackup = false;
 
   @override
   void initState() {
     super.initState();
-    // Gunakan global static list agar history tidak hilang saat rebuild/navigasi
-    _sessions = _globalSessions;
-
+    _initChat();
+    
     // Jika ada rider info dari Tracking Page → buat sesi baru dan langsung buka
     final rider = widget.newRiderInfo;
     if (rider != null) {
-      final newId = 'rider_${rider['rider_id'] ?? DateTime.now().millisecondsSinceEpoch}';
-      
-      // Cek apakah sesi dengan rider_id ini sudah ada sebelumnya
-      final existingIndex = _sessions.indexWhere((s) => s.id == newId);
-      
-      if (existingIndex != -1) {
-        // Jika sudah ada, cukup arahkan ke sesi tersebut
-        _selectedSessionId = newId;
-      } else {
-        // Jika belum ada, buat sesi chat baru
-        final riderStatus = rider['status'] as String? ?? 'Mengantar';
-        final newSession = ChatSession(
-          id: newId,
-          riderName: rider['name'] as String? ?? 'Kurir',
-          brandName: rider['brand'] as String? ?? 'Brand Kopi',
-          avatarPath: rider['logo'] as String? ?? '',
-          status: riderStatus,
-          lastMessageTime: 'Sekarang',
-          unreadCount: 0,
-          messages: [
-            MessageModel(
-              text: 'Halo kak! Saya ${rider['name']}, rider dari ${rider['brand']}. Ada yang bisa saya bantu? 🛵☕',
-              timestamp: DateTime.now(),
-              isMe: false,
-            ),
-          ],
-        );
-        _sessions.insert(0, newSession);
-        _selectedSessionId = newId;
+      final riderIdStr = rider['rider_id']?.toString() ?? '';
+      _customerId = Supabase.instance.client.auth.currentUser?.id;
+      if (_customerId != null && riderIdStr.isNotEmpty) {
+        final expectedChatId = 'chat_${_customerId}_$riderIdStr';
+        
+        // Cek apakah sesi dengan rider_id ini sudah ada sebelumnya
+        final existingIndex = _sessions.indexWhere((s) => s.id == expectedChatId);
+        
+        if (existingIndex != -1) {
+          _selectedSessionId = expectedChatId;
+        } else {
+          final riderStatus = rider['status'] as String? ?? 'Mengantar';
+          final newSession = ChatSession(
+            id: expectedChatId,
+            riderName: rider['name'] as String? ?? 'Kurir',
+            brandName: rider['brand'] as String? ?? 'Brand Kopi',
+            avatarPath: rider['logo'] as String? ?? '',
+            status: riderStatus,
+            lastMessageTime: 'Sekarang',
+            unreadCount: 0,
+            riderId: riderIdStr,
+            messages: [],
+          );
+          setState(() {
+            _sessions.insert(0, newSession);
+            _selectedSessionId = expectedChatId;
+          });
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    }
+  }
+
+  Future<void> _initChat() async {
+    final profile = ProfileManager();
+    _customerId = Supabase.instance.client.auth.currentUser?.id;
+    _customerName = profile.name;
+    _customerLogo = profile.profileImage;
+
+    if (_customerId == null) {
+      debugPrint("⚠️ Cannot init chat: _customerId is null");
+      return;
+    }
+
+    debugPrint("🔌 Init chat for customer: $_customerId");
+    
+    // 1. Fetch semua pesan yang sudah ada
+    await _fetchAllMessages();
+    
+    // 2. Subscribe ke Supabase Realtime channel untuk INSERT baru (Murni Real-time)
+    _messagesChannel = Supabase.instance.client
+        .channel('messages_realtime')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'messages',
+          callback: (payload) {
+            debugPrint("📥 Realtime INSERT detected: ${payload.newRecord}");
+            _handleNewMessage(payload.newRecord);
+          },
+        )
+        .subscribe((status, [error]) {
+          debugPrint("📡 Realtime channel status: $status ${error ?? ''}");
+        });
+  }
+
+  Future<void> _fetchAllMessages() async {
+    try {
+      final data = await Supabase.instance.client
+          .from('messages')
+          .select('*')
+          .order('created_at', ascending: true);
+      
+      if (data is List) {
+        await _processMessagesFromSupabase(data.cast<Map<String, dynamic>>());
+      }
+    } catch (e) {
+      debugPrint("❌ Fetch messages error: $e");
+    }
+  }
+
+  void _handleNewMessage(Map<String, dynamic> newRecord) {
+    final msgData = newRecord['message_data'];
+    if (msgData is! Map) {
+      debugPrint("⚠️ Realtime message skipped: message_data is not a Map");
+      return;
+    }
+    
+    final customer = msgData['customer'];
+    if (customer is! Map || customer['id']?.toString() != _customerId?.toString()) {
+      debugPrint("⚠️ Realtime message skipped: customer ID mismatch (db: ${customer?['id']} vs local: $_customerId)");
+      return;
+    }
+    
+    final chatId = msgData['chatId']?.toString() ?? '';
+    final riderId = msgData['riderId']?.toString() ?? '';
+    final message = msgData['message'];
+    if (message is! Map) return;
+    
+    final sender = message['sender']?.toString() ?? '';
+    final text = message['text']?.toString() ?? '';
+    String rawTimestampStr = newRecord['created_at']?.toString() ?? message['rawTimestamp']?.toString() ?? '';
+    final timestamp = DateTime.tryParse(rawTimestampStr)?.toLocal() ?? DateTime.now();
+    
+    final riderData = msgData['riderData'];
+    String riderName = 'Rider';
+    String brandName = 'Temu Kopling';
+    String avatarPath = '';
+    if (riderData is Map) {
+      riderName = riderData['riderName']?.toString() ?? 'Rider';
+      brandName = riderData['brand']?.toString() ?? 'Temu Kopling';
+      avatarPath = riderData['logo']?.toString() ?? '';
+    }
+    
+    final newMsg = MessageModel(
+      text: text,
+      timestamp: timestamp,
+      isMe: sender == 'customer',
+    );
+    
+    if (mounted) {
+      setState(() {
+        var sessionIndex = _sessions.indexWhere((s) => s.id == chatId);
+        
+        if (sessionIndex != -1) {
+          final session = _sessions[sessionIndex];
+          // Cek duplikasi: hanya dianggap duplikat jika teks, pengirim (isMe), dan waktu detiknya sama persis
+          final isDuplicate = session.messages.any(
+            (m) => m.text == text && 
+                   m.isMe == (sender == 'customer') &&
+                   m.timestamp.difference(timestamp).inSeconds.abs() <= 2,
+          );
+          if (!isDuplicate) {
+            session.messages.add(newMsg);
+            session.lastMessageTime = _formatTimeDisplay(timestamp);
+            if (_selectedSessionId != chatId) {
+              session.unreadCount += 1;
+            }
+            // Pindahkan ke atas
+            _sessions.removeAt(sessionIndex);
+            _sessions.insert(0, session);
+            debugPrint("🟢 Realtime message successfully added to session: $chatId");
+          } else {
+            debugPrint("⚠️ Realtime message skipped: Duplicate detected (text: '$text', isMe: ${sender == 'customer'})");
+          }
+        } else {
+          // Sesi baru
+          _sessions.insert(0, ChatSession(
+            id: chatId,
+            riderName: riderName,
+            brandName: brandName,
+            avatarPath: avatarPath,
+            status: 'Mengantar',
+            lastMessageTime: _formatTimeDisplay(timestamp),
+            messages: [newMsg],
+            riderId: riderId,
+          ));
+          debugPrint("🟢 Realtime message created new session: $chatId");
+        }
+      });
+      _scrollToBottom();
+    }
+  }
+
+  String _formatTimeDisplay(DateTime dt) {
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  Future<void> _processMessagesFromSupabase(List<Map<String, dynamic>> data) async {
+    final Map<String, ChatSession> sessionMap = {};
+    
+    for (var row in data) {
+      final msgData = row['message_data'];
+      if (msgData is! Map) continue;
+      
+      final customer = msgData['customer'];
+      if (customer is! Map || customer['id'] != _customerId) continue;
+      
+      final chatId = msgData['chatId']?.toString() ?? '';
+      final riderId = msgData['riderId']?.toString() ?? '';
+      final message = msgData['message'];
+      if (message is! Map) continue;
+      
+      final sender = message['sender']?.toString() ?? '';
+      final text = message['text']?.toString() ?? '';
+      
+      String rawTimestampStr = row['created_at']?.toString() ?? message['rawTimestamp']?.toString() ?? '';
+      final timestamp = DateTime.tryParse(rawTimestampStr)?.toLocal() ?? DateTime.now();
+      
+      final riderData = msgData['riderData'];
+      String riderName = 'Rider';
+      String brandName = 'Temu Kopling';
+      String avatarPath = '';
+      if (riderData is Map) {
+        riderName = riderData['riderName']?.toString() ?? 'Rider';
+        brandName = riderData['brand']?.toString() ?? 'Temu Kopling';
+        avatarPath = riderData['logo']?.toString() ?? '';
+      }
+      
+      if (!sessionMap.containsKey(chatId)) {
+        sessionMap[chatId] = ChatSession(
+          id: chatId,
+          riderName: riderName,
+          brandName: brandName,
+          avatarPath: avatarPath,
+          status: 'Mengantar',
+          lastMessageTime: _formatTimeDisplay(timestamp),
+          messages: [],
+          riderId: riderId,
+        );
+      }
+      
+      final session = sessionMap[chatId]!;
+      // Hindari duplikat pesan
+      final isDuplicate = session.messages.any((m) => m.text == text && m.timestamp.difference(timestamp).inSeconds.abs() < 2);
+      if (!isDuplicate) {
+        session.messages.add(MessageModel(
+          text: text,
+          timestamp: timestamp,
+          isMe: sender == 'customer',
+        ));
+      }
+    }
+    
+    // Sort messages di tiap session
+    for (var session in sessionMap.values) {
+      session.messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    }
+    
+    // Fetch profile terbaru dari database (seperti di web)
+    final uniqueRiderIds = sessionMap.values.map((s) => s.riderId).toSet().toList();
+    if (uniqueRiderIds.isNotEmpty) {
+      try {
+        final profilesRes = await Supabase.instance.client
+            .from('profiles')
+            .select('id, name, brand, logo')
+            .inFilter('id', uniqueRiderIds);
+        
+        if (profilesRes is List) {
+          for (var p in profilesRes) {
+            if (p is Map) {
+              final rId = p['id']?.toString() ?? '';
+              final rName = p['name']?.toString() ?? 'Rider';
+              final rBrand = p['brand']?.toString() ?? 'Temu Kopling';
+              final rLogo = p['logo']?.toString() ?? '';
+              
+              for (var s in sessionMap.values) {
+                if (s.riderId == rId) {
+                  s.riderName = rName;
+                  s.brandName = rBrand;
+                  s.avatarPath = rLogo;
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint("Error fetching rider profiles: $e");
+      }
+    }
+
+    // Fetch status keaktidan kurir dari active_riders
+    try {
+      final activeRidersRes = await Supabase.instance.client
+          .from('active_riders')
+          .select();
+      
+      if (activeRidersRes is List) {
+        for (var s in sessionMap.values) {
+          final hasActiveRider = activeRidersRes.any(
+            (r) => r is Map && r['rider_id']?.toString() == s.riderId,
+          );
+          if (hasActiveRider) {
+            s.status = 'Mengantar';
+          } else {
+            s.status = 'Selesai';
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching active riders status: $e");
+    }
+    
+    if (mounted) {
+      setState(() {
+        _sessions.clear();
+        _sessions.addAll(sessionMap.values);
+        _sessions.sort((a, b) {
+          if (a.messages.isEmpty) return 1;
+          if (b.messages.isEmpty) return -1;
+          return b.messages.last.timestamp.compareTo(a.messages.last.timestamp);
+        });
+      });
+      _scrollToBottom();
     }
   }
 
   @override
   void dispose() {
+    _messagesChannel?.unsubscribe();
+    _backupPollingTimer?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  // Auto scroll to bottom of chat list
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -134,7 +415,6 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  // Get active session
   ChatSession? get _activeSession {
     if (_selectedSessionId == null) return null;
     try {
@@ -144,13 +424,9 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  // ==========================================
-  // DELETE SESSION
-  // ==========================================
   void _deleteSession(ChatSession session) {
     setState(() {
       _sessions.removeWhere((s) => s.id == session.id);
-      // Jika sesi yang dihapus sedang terbuka, kembali ke list
       if (_selectedSessionId == session.id) {
         _selectedSessionId = null;
       }
@@ -206,85 +482,81 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  // Send message action
-  void _sendMessage(String text, {String? imageUrl}) {
+  Future<void> _sendMessage(String text, {String? imageUrl}) async {
     if (text.trim().isEmpty && imageUrl == null) return;
     
     final session = _activeSession;
     if (session == null) return;
 
+    final now = DateTime.now();
+    final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    
+    final payloadMessage = {
+      'sender': 'customer',
+      'text': text.trim(),
+      'timestamp': timeStr,
+      'rawTimestamp': now.toUtc().toIso8601String(),
+    };
+
+    final payload = {
+      'chatId': session.id,
+      'customer': {
+        'id': _customerId,
+        'name': _customerName,
+        'logo': _customerLogo ?? '',
+      },
+      'riderId': session.riderId,
+      'message': payloadMessage,
+      'riderData': {
+        'riderName': session.riderName,
+        'brand': session.brandName,
+        'logo': session.avatarPath,
+      }
+    };
+
+    _messageController.clear();
+
+    // Optimistic UI update — tampilkan pesan langsung di UI
     setState(() {
       session.messages.add(
         MessageModel(
-          text: text,
-          timestamp: DateTime.now(),
+          text: text.trim(),
+          timestamp: now,
           isMe: true,
           imageUrl: imageUrl,
         ),
       );
+      // Pindahkan sesi ke paling atas
+      final idx = _sessions.indexOf(session);
+      if (idx > 0) {
+        _sessions.removeAt(idx);
+        _sessions.insert(0, session);
+      }
     });
-
-    _messageController.clear();
     _scrollToBottom();
 
-    // Trigger simulated reply from rider after 1 second
-    _simulateRiderReply(session, text);
-  }
-
-  void _simulateRiderReply(ChatSession session, String userMessage) {
-    // 1. Show typing status after 1 second
-    Timer(const Duration(milliseconds: 1000), () {
-      if (!mounted || _selectedSessionId != session.id) return;
-      setState(() {
-        _isTyping = true;
+    try {
+      // Simpan langsung ke Supabase secara native. 
+      // Realtime Bridge di backend akan secara otomatis mem-broadcast-nya via Socket.io ke Rider Web.
+      await Supabase.instance.client.from('messages').insert({
+        'chat_id': session.id,
+        'message_data': payload,
       });
-      _scrollToBottom();
-    });
-
-    // 2. Add driver message after 2.5 seconds total
-    Timer(const Duration(milliseconds: 2500), () {
-      if (!mounted) return;
-      
-      setState(() {
-        _isTyping = false;
-      });
-
-      String replyText = 'Baik kak, langsung saya proses ya!';
-      final lowerText = userMessage.toLowerCase();
-      
-      if (lowerText.contains('uang pas') || lowerText.contains('kembalian')) {
-        replyText = 'Siap kak, terima kasih informasinya. Uang kembalian akan saya siapkan.';
-      } else if (lowerText.contains('titik') || lowerText.contains('lokasi') || lowerText.contains('sesuai')) {
-        replyText = 'Oke kak, meluncur sesuai peta titik GPS ya.';
-      } else if (lowerText.contains('mana') || lowerText.contains('posisi') || lowerText.contains('sampai')) {
-        if (session.status == 'Mengantar') {
-          replyText = 'Ini sedang di jalan kak, sekitar 3 menit lagi sampai di lokasi.';
-        } else if (session.status == 'Diseduh') {
-          replyText = 'Sedang diseduh kopinya kak, sebentar lagi jalan.';
-        } else {
-          replyText = 'Pesanan sudah selesai dikirim kak.';
-        }
-      } else if (lowerText.contains('terima kasih') || lowerText.contains('makasih') || lowerText.contains('thx')) {
-        replyText = 'Sama-sama kak! Semoga suka dengan kopinya.';
-      } else if (lowerText.contains('es') || lowerText.contains('gula') || lowerText.contains('manis')) {
-        replyText = 'Siap kak, pesanan dicatat sesuai permintaan.';
-      }
-
-      setState(() {
-        session.messages.add(
-          MessageModel(
-            text: replyText,
-            timestamp: DateTime.now(),
-            isMe: false,
+      debugPrint("✅ Message inserted directly to Supabase");
+    } catch (e) {
+      debugPrint("❌ Failed to insert message to Supabase: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal mengirim pesan: $e'),
+            backgroundColor: Colors.red[700],
+            duration: const Duration(seconds: 4),
           ),
         );
-      });
-      
-      _scrollToBottom();
-    });
+      }
+    }
   }
 
-  // Get filtered lists of sessions
   List<ChatSession> get _filteredSessions {
     return _sessions.where((session) {
       final matchesSearch = session.riderName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
