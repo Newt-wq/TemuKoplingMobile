@@ -40,6 +40,8 @@ dependencies:
   supabase_flutter: ^2.6.0
   image_picker: ^1.1.2
   shared_preferences: ^2.2.3
+  geolocator: ^13.0.2
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:

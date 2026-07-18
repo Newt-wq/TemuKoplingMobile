@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'screens/main_screen.dart'; // Mengambil MainScreen dari folder screens
+import 'screens/main_screen.dart';
+import 'screens/auth/login_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,15 +19,16 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final session = Supabase.instance.client.auth.currentSession;
+    
     return MaterialApp(
       title: 'Temu Kopling',
-      debugShowCheckedModeBanner: false, // Menghilangkan tulisan "DEBUG" merah di pojok kanan atas
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        // Set tema warna coklat secara keseluruhan
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.brown),
       ),
-      home: const MainScreen(),
+      home: session != null ? const MainScreen() : const LoginScreen(),
     );
   }
 }

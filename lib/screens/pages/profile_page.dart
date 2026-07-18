@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/profile_manager.dart';
+import '../auth/login_screen.dart';
 import 'home_page.dart'; // untuk FavoritesManager
 
 class ProfilePage extends StatefulWidget {
@@ -765,14 +767,21 @@ class _ProfilePageState extends State<ProfilePage>
                 style: TextStyle(color: accentBrown, fontWeight: FontWeight.w600)),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Berhasil keluar dari akun'),
-                  backgroundColor: Colors.redAccent,
-                ),
-              );
+              await Supabase.instance.client.auth.signOut();
+              if (context.mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                  (route) => false,
+                );
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Berhasil keluar dari akun'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFE53935),
