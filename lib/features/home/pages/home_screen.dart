@@ -802,6 +802,7 @@ class MenuCard extends StatefulWidget {
   final String brand;
   final String name;
   final String price;
+  final int? stock;
 
   const MenuCard({
     super.key,
@@ -809,6 +810,7 @@ class MenuCard extends StatefulWidget {
     required this.brand,
     required this.name,
     required this.price,
+    this.stock,
   });
 
   @override
@@ -967,13 +969,41 @@ class _MenuCardState extends State<MenuCard> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 SizedBox(height: AppSpacing.xs),
-                Text(
-                  widget.price,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primaryBrown,
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      widget.price,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryBrown,
+                      ),
+                    ),
+                    if (widget.stock != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: widget.stock! > 0
+                              ? Colors.green.withValues(alpha: 0.1)
+                              : Colors.red.withValues(alpha: 0.1),
+                          borderRadius: AppRadius.radiusSm,
+                        ),
+                        child: Text(
+                          widget.stock! > 0 ? 'Stok ${widget.stock}' : 'Habis',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: widget.stock! > 0
+                                ? Colors.green[700]
+                                : Colors.red[700],
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ),

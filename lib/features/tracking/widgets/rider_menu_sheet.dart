@@ -119,6 +119,7 @@ class _RiderMenuSheetState extends State<RiderMenuSheet> {
             brand: widget.rider['brand'] ?? 'Kopi',
             name: menu['name'] ?? 'Menu',
             price: "Rp ${menu['price'] ?? 0}",
+            stock: stock,
           ),
         );
       },

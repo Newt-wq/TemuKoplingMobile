@@ -6,6 +6,7 @@ import 'package:temu_kopling_mobile/features/profile/services/profile_manager.da
 
 import '../models/chat_model.dart';
 import '../services/chat_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/chat_list_view.dart';
 import '../widgets/chat_detail_view.dart';
 
@@ -190,6 +191,15 @@ class _ChatPageState extends State<ChatPage> {
             }
             _sessions.removeAt(sessionIndex);
             _sessions.insert(0, session);
+
+            // Tampilkan notifikasi jika pesan dari rider & user tidak sedang di chat itu
+            if (sender == 'rider' && _selectedSessionId != chatId) {
+              NotificationService.showChatNotification(
+                senderName: session.riderName,
+                messageText: text,
+                chatId: chatId,
+              );
+            }
           }
         } else {
           _sessions.insert(
