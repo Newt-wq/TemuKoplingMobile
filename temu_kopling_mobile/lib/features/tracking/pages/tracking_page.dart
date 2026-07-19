@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:url_launcher/url_launcher.dart';
 import '../services/tracking_service.dart';
 import '../widgets/tracking_map_widget.dart';
+import '../widgets/rider_menu_sheet.dart';
 import '../widgets/map_control_buttons.dart';
 import '../widgets/rider_detail_panel.dart';
 import '../widgets/rider_list_sheet.dart';
@@ -263,7 +264,19 @@ class _TrackingPageState extends State<TrackingPage>
 
   void _onLihatMenu(Map<String, dynamic>? rider) {
     if (rider == null) return;
-    // TODO: navigasi ke halaman menu kopi milik rider ini
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            top: MediaQuery.of(context).padding.top + 24, // beri jarak dari atas
+          ),
+          child: RiderMenuSheet(rider: rider),
+        );
+      },
+    );
   }
 
   void _closePanel() {

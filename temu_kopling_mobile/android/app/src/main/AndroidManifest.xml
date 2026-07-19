@@ -4,9 +4,9 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <application
-        android:label="temu_kopling_mobile"
+        android:label="Temu Kopling"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/launcher_icon"
         android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="false">
         <activity
