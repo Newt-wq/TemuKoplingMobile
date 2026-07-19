@@ -1,0 +1,18 @@
+ lib/main.dart                             |   16 [32m+[m[31m-[m
+ lib/screens/auth/login_screen.dart        |  417 [31m------[m
+ lib/screens/auth/register_screen.dart     |  427 [31m-------[m
+ lib/screens/main_screen.dart              |  164 [31m---[m
+ lib/screens/pages/chat_page.dart          | 1679 [31m------------------------[m
+ lib/screens/pages/home_page.dart          |  738 [31m-----------[m
+ lib/screens/pages/like_page.dart          |  426 [31m-------[m
+ lib/screens/pages/order_history_page.dart |  474 [31m-------[m
+ lib/screens/pages/profile_page.dart       | 1975 [31m-----------------------------[m
+ lib/screens/pages/tracking_page.dart      | 1335 [31m-------------------[m
+ lib/services/profile_manager.dart         |  120 [31m--[m
+ lib/widgets/custom_webview.dart           |    3 [31m-[m
+ lib/widgets/custom_webview_mobile.dart    |   27 [31m-[m
+ lib/widgets/custom_webview_web.dart       |   34 [31m-[m
+ lib/widgets/webview_stub.dart             |   11 [31m-[m
+ pubspec.lock                              |   24 [31m-[m
+ pubspec.yaml                              |    2 [32m+[m[31m-[m
+ 17 files changed, 10 insertions(+), 7862 deletions(-)
