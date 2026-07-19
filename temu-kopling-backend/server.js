@@ -8,9 +8,59 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Health check
+// Cek kesehatan server
 app.get('/', (req, res) => {
   res.json({ status: 'ok', activeRiders: Object.keys(activeRiders).length, time: new Date().toISOString() });
+});
+
+// REST endpoint agar mobile bisa kirim pesan tanpa Socket.io
+app.post('/api/send-message', async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || !data.chatId) {
+      return res.status(400).json({ error: 'chatId is required' });
+    }
+
+    // 1. Simpan ke Supabase
+    const { error } = await supabase.from('messages').insert({
+      chat_id:      data.chatId,
+      message_data: data,
+    });
+
+    if (error) {
+      console.log('❌ REST send-message: Gagal simpan pesan:', error.message);
+      return res.status(500).json({ error: error.message });
+    }
+
+    // 2. Broadcast via Socket.io ke semua listener
+    const roomSize = io.sockets.adapter.rooms.get(data.chatId)?.size || 0;
+    if (roomSize > 0) {
+      io.to(data.chatId).emit('receive_message', data);
+    } else {
+      io.emit('receive_message', data);
+    }
+
+    // 3. Kirim notifikasi ke room pribadi penerima
+    if (data.message?.sender === 'customer' && data.riderId) {
+      io.to(`user_${data.riderId}`).emit('new_notification', {
+        chatId: data.chatId,
+        from: data.customer?.name || 'Pelanggan',
+        preview: data.message?.text || ''
+      });
+    } else if (data.message?.sender === 'rider' && data.customer?.id) {
+      io.to(`user_${data.customer.id}`).emit('new_notification', {
+        chatId: data.chatId,
+        from: data.riderData?.riderName || 'Rider',
+        preview: data.message?.text || ''
+      });
+    }
+
+    console.log('✅ REST send-message berhasil:', data.chatId);
+    res.json({ success: true });
+  } catch (e) {
+    console.log('❌ REST send-message exception:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 const server = http.createServer(app);
@@ -68,7 +118,7 @@ function broadcastRiders() {
   // console.log(`📡 Broadcast: ${list.length} riders aktif`);
 }
 
-// Helper: upsert active_rider ke Supabase (safe — handle kolom landmark optional)
+// Fungsi Bantuan: simpan/perbarui active_rider ke Supabase (aman — urus kolom patokan secara opsional)
 async function upsertActiveRider(riderData) {
   const row = {
     rider_id:   riderData.id,
@@ -113,7 +163,7 @@ async function upsertActiveRider(riderData) {
 loadActiveRidersFromDB();
 
 // =======================================================
-// SOCKET.IO EVENTS
+// EVENT (KEJADIAN) SOCKET.IO
 // =======================================================
 io.on('connection', (socket) => {
   console.log('🟢 Klien terhubung:', socket.id);
@@ -146,7 +196,7 @@ io.on('connection', (socket) => {
     if (chatId) socket.leave(chatId);
   });
 
-  // --- CHAT: request history ---
+  // --- CHAT: minta riwayat obrolan ---
   socket.on('request_chat_history', async (chatId) => {
     try {
       let query = supabase
@@ -174,7 +224,7 @@ io.on('connection', (socket) => {
 
       if (error) { console.log('❌ Gagal simpan pesan:', error.message); return; }
 
-      // Kirim ke room jika ada yang join, fallback broadcast
+      // Kirim ke room jika ada yang bergabung, cadangan kirim ke semua
       const roomSize = io.sockets.adapter.rooms.get(data.chatId)?.size || 0;
       if (roomSize > 0) {
         io.to(data.chatId).emit('receive_message', data);
@@ -203,13 +253,13 @@ io.on('connection', (socket) => {
     }
   });
 
-  // --- PROFILE: broadcast perubahan profil ke semua client ---
+  // --- PROFIL: siarkan perubahan profil ke semua klien ---
   socket.on('profile_updated', (data) => {
-    // Relay ke semua client lain agar chat dan map langsung update
+    // Teruskan ke semua klien lain agar obrolan dan peta langsung diperbarui
     socket.broadcast.emit('profile_updated', data);
     console.log(`📸 Profile updated broadcast: ${data.name} (userId: ${data.userId})`);
 
-    // Force-update ke tabel profiles DB lewat backend (bypass RLS)
+    // Paksa perbarui ke tabel profiles DB lewat backend (melewati RLS)
     if (data.userId) {
       supabase
         .from('profiles')
@@ -221,7 +271,7 @@ io.on('connection', (socket) => {
         });
     }
 
-    // Update activeRiders in-memory agar data tidak tertimpa saat location update berikutnya
+    // Perbarui activeRiders di memori agar data tidak tertimpa saat pembaruan lokasi berikutnya
     if (data.role === 'rider' && data.userId && activeRiders[data.userId]) {
       activeRiders[data.userId].name = data.name;
       if (data.brand) activeRiders[data.userId].brand = data.brand;
@@ -253,7 +303,7 @@ io.on('connection', (socket) => {
     upsertActiveRider(riderData);
   });
 
-  // --- RIDER: update lokasi realtime ---
+  // --- RIDER: perbarui lokasi secara langsung ---
   socket.on('update_location', (data) => {
     if (!activeRiders[data.id]) return;
 
@@ -262,7 +312,7 @@ io.on('connection', (socket) => {
 
     broadcastRiders();
 
-    // Update DB non-blocking
+    // Perbarui DB tanpa mengganggu proses lain
     supabase
       .from('active_riders')
       .update({ lat: data.lat, lng: data.lng, updated_at: new Date().toISOString() })
@@ -285,7 +335,7 @@ io.on('connection', (socket) => {
 
     broadcastRiders(); // kirim dulu ke customer
 
-    // Update DB
+    // Perbarui DB
     const { error } = await supabase
       .from('active_riders')
       .update({ status: 'offline', updated_at: new Date().toISOString() })
@@ -294,16 +344,54 @@ io.on('connection', (socket) => {
     if (error) console.log('⚠️  stop_ngetem DB error:', error.message);
   });
 
-  // Disconnect: JANGAN hapus dari active_riders
+  // Putus koneksi: JANGAN hapus dari active_riders
   // Rider hilang hanya saat tekan "Berhenti Ngetem"
   socket.on('disconnect', () => {
     console.log('🔴 Klien terputus:', socket.id);
   });
 });
 
-// Backend ini sekarang murni difokuskan untuk menangani WebSocket (Realtime Chat & Tracking)
-// Semua operasi CRUD (seperti Manajemen Menu) langsung ditangani oleh aplikasi Next.js
-// melalui koneksi Supabase Client.
+// Realtime Bridge: Dengarkan event INSERT baru di tabel messages Supabase secara langsung, 
+// kemudian broadcast ke klien Socket.io yang aktif (rider web).
+supabase
+  .channel('messages_backend_bridge')
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+    try {
+      const row = payload.new;
+      const msgData = row.message_data;
+      if (!msgData || !msgData.chatId) return;
+
+      console.log(`📡 [Realtime Bridge] Menyiarkan pesan baru untuk room: ${msgData.chatId}`);
+
+      // 1. Broadcast ke room chat terkait
+      const roomSize = io.sockets.adapter.rooms.get(msgData.chatId)?.size || 0;
+      if (roomSize > 0) {
+        io.to(msgData.chatId).emit('receive_message', msgData);
+      } else {
+        io.emit('receive_message', msgData);
+      }
+
+      // 2. Kirim notifikasi privat
+      if (msgData.message?.sender === 'customer' && msgData.riderId) {
+        io.to(`user_${msgData.riderId}`).emit('new_notification', {
+          chatId: msgData.chatId,
+          from: msgData.customer?.name || 'Pelanggan',
+          preview: msgData.message?.text || ''
+        });
+      } else if (msgData.message?.sender === 'rider' && msgData.customer?.id) {
+        io.to(`user_${msgData.customer.id}`).emit('new_notification', {
+          chatId: msgData.chatId,
+          from: msgData.riderData?.riderName || 'Rider',
+          preview: msgData.message?.text || ''
+        });
+      }
+    } catch (err) {
+      console.log('❌ Realtime Bridge error:', err.message);
+    }
+  })
+  .subscribe((status) => {
+    console.log(`📡 Realtime Bridge Status: ${status}`);
+  });
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
